@@ -6,7 +6,7 @@
 #include "php.h"
 #include "php_ini.h"
 #include "ext/standard/info.h"
-#include "php_pib.h"
+#include "php_omni.h"
 
 #define XFUNC_UNKNOWN        0x00
 #define XFUNC_NORMAL         0x01
@@ -34,12 +34,7 @@ typedef struct _function_stack_entry_t {
     func_t function;
 } function_stack_entry_t;
 
-/* If you declare any globals in php_pib.h uncomment this:
-ZEND_DECLARE_MODULE_GLOBALS(pib)
-*/
-
-/* True global resources - no need for thread safety here */
-static int le_pib;
+// ZEND_DECLARE_MODULE_GLOBALS(omni)
 
 void my_error_cb(int type, const char *error_filename, const uint error_lineno, const char *format, va_list args)
 {
@@ -61,16 +56,6 @@ void my_error_cb(int type, const char *error_filename, const uint error_lineno, 
 
     original_zend_error_cb(type, error_filename, error_lineno, format, args_copy);
 }
-
-// void my_execute_internal(zend_execute_data *execute_data, zval *return_value)
-// {
-//     zend_printf(
-//         "%s",
-//         ZSTR_VAL(execute_data->func->common.function_name)
-//     );
-
-//     original_zend_execute_internal(execute_data, return_value);
-// }
 
 char *xdebug_sprintf(const char* fmt, ...)
 {
@@ -248,32 +233,23 @@ void my_execute_ex(zend_execute_data *execute_data TSRMLS_DC)
     efree(fse);
 }
 
-/* Remove comments and fill if you need to have entries in php.ini
-PHP_INI_BEGIN()
-    STD_PHP_INI_ENTRY("pib.global_value",      "42", PHP_INI_ALL, OnUpdateLong, global_value, zend_pib_globals, pib_globals)
-    STD_PHP_INI_ENTRY("pib.global_string", "foobar", PHP_INI_ALL, OnUpdateString, global_string, zend_pib_globals, pib_globals)
-PHP_INI_END()
-*/
+// PHP_INI_BEGIN()
+//     STD_PHP_INI_ENTRY("omni.global_value",      "42", PHP_INI_ALL, OnUpdateLong, global_value, zend_omni_globals, omni_globals)
+//     STD_PHP_INI_ENTRY("omni.global_string", "foobar", PHP_INI_ALL, OnUpdateString, global_string, zend_omni_globals, omni_globals)
+// PHP_INI_END()
 
-/* Uncomment this function if you have INI entries
-static void php_pib_init_globals(zend_pib_globals *pib_globals)
-{
-	pib_globals->global_value = 0;
-	pib_globals->global_string = NULL;
-}
-*/
+// static void php_omni_init_globals(zend_omni_globals *omni_globals)
+// {
+// 	omni_globals->global_value = 0;
+// 	omni_globals->global_string = NULL;
+// }
 
-PHP_MINIT_FUNCTION(pib)
+PHP_MINIT_FUNCTION(omni)
 {
-	/* If you have INI entries, uncomment these lines
-	REGISTER_INI_ENTRIES();
-	*/
+	// REGISTER_INI_ENTRIES();
 
     original_zend_error_cb = zend_error_cb;
     zend_error_cb = my_error_cb;
-
-    // original_zend_execute_internal = zend_execute_internal;
-    // zend_execute_internal = my_execute_internal;
 
     original_zend_execute_ex = zend_execute_ex;
     zend_execute_ex = my_execute_ex;
@@ -281,67 +257,58 @@ PHP_MINIT_FUNCTION(pib)
 	return SUCCESS;
 }
 
-PHP_MSHUTDOWN_FUNCTION(pib)
+PHP_MSHUTDOWN_FUNCTION(omni)
 {
-	/* uncomment this line if you have INI entries
-	UNREGISTER_INI_ENTRIES();
-	*/
+	// UNREGISTER_INI_ENTRIES();
 
 	zend_error_cb = original_zend_error_cb;
-    // zend_execute_internal = original_zend_execute_internal;
     zend_execute_ex = original_zend_execute_ex;
 
 	return SUCCESS;
 }
 
-/* Remove if there's nothing to do at request start */
-PHP_RINIT_FUNCTION(pib)
+PHP_RINIT_FUNCTION(omni)
 {
-#if defined(COMPILE_DL_PIB) && defined(ZTS)
+#if defined(COMPILE_DL_OMNI) && defined(ZTS)
 	ZEND_TSRMLS_CACHE_UPDATE();
 #endif
 	return SUCCESS;
 }
 
-/* Remove if there's nothing to do at request end */
-PHP_RSHUTDOWN_FUNCTION(pib)
+PHP_RSHUTDOWN_FUNCTION(omni)
 {
 	return SUCCESS;
 }
 
-PHP_MINFO_FUNCTION(pib)
+PHP_MINFO_FUNCTION(omni)
 {
 	php_info_print_table_start();
-	php_info_print_table_header(2, "pib support", "enabled");
+	php_info_print_table_header(2, "omni support", "enabled");
 	php_info_print_table_end();
 
-	/* Remove comments if you have entries in php.ini
-	DISPLAY_INI_ENTRIES();
-	*/
+	// DISPLAY_INI_ENTRIES();
 }
 
-/* Every user visible function must have an entry in pib_functions[]. */
-const zend_function_entry pib_functions[] = {
-	/*PHP_FE(confirm_pib_compiled,	NULL)*/		/* For testing, remove later. */
-	PHP_FE_END	/* Must be the last line in pib_functions[] */
+const zend_function_entry omni_functions[] = {
+	PHP_FE_END
 };
 
-zend_module_entry pib_module_entry = {
+zend_module_entry omni_module_entry = {
 	STANDARD_MODULE_HEADER,
-	"pib",
-	pib_functions,
-	PHP_MINIT(pib),
-	PHP_MSHUTDOWN(pib),
-	PHP_RINIT(pib),		/* Replace with NULL if there's nothing to do at request start */
-	PHP_RSHUTDOWN(pib),	/* Replace with NULL if there's nothing to do at request end */
-	PHP_MINFO(pib),
-	PHP_PIB_VERSION,
+	"omni",
+	omni_functions,
+	PHP_MINIT(omni),
+	PHP_MSHUTDOWN(omni),
+	PHP_RINIT(omni),
+	PHP_RSHUTDOWN(omni),
+	PHP_MINFO(omni),
+	PHP_OMNI_VERSION,
 	STANDARD_MODULE_PROPERTIES
 };
 
-#ifdef COMPILE_DL_PIB
+#ifdef COMPILE_DL_OMNI
 #ifdef ZTS
 ZEND_TSRMLS_CACHE_DEFINE()
 #endif
-ZEND_GET_MODULE(pib)
+ZEND_GET_MODULE(omni)
 #endif
