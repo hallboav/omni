@@ -109,7 +109,7 @@ void build_fname(func_t *tmp, zend_execute_data *edata TSRMLS_DC)
 #if PHP_VERSION_ID >= 70100
     if (edata && edata->func && edata->func == (zend_function*) &zend_pass_function) {
         tmp->type     = XFUNC_ZEND_PASS;
-        tmp->function = strdup("{zend_pass}");
+        tmp->function = estrdup("{zend_pass}");
     } else
 #endif
 
@@ -131,22 +131,22 @@ void build_fname(func_t *tmp, zend_execute_data *edata TSRMLS_DC)
                     edata->func->common.scope->info.user.line_end
                 );
             } else {
-                tmp->class = strdup(edata->This.value.obj->ce->name->val);
+                tmp->class = estrdup(edata->This.value.obj->ce->name->val);
             }
         } else {
             if (edata->func->common.scope) {
                 tmp->type = XFUNC_STATIC_MEMBER;
-                tmp->class = strdup(edata->func->common.scope->name->val);
+                tmp->class = estrdup(edata->func->common.scope->name->val);
             }
         }
 
         if (edata->func->common.function_name) {
             if (function_name_is_closure(edata->func->common.function_name->val)) {
-                tmp->function = strdup("{closure_mas_tem_que_arrumar}");
+                tmp->function = estrdup("{closure_mas_tem_que_arrumar}");
             } else if (strncmp(edata->func->common.function_name->val, "call_user_func", 14) == 0) {
-                tmp->function = strdup("{call_user_func}");
+                tmp->function = estrdup("{call_user_func}");
             } else {
-                tmp->function = strdup(edata->func->common.function_name->val);
+                tmp->function = estrdup(edata->func->common.function_name->val);
             }
         } else if (
             edata &&
@@ -159,7 +159,7 @@ void build_fname(func_t *tmp, zend_execute_data *edata TSRMLS_DC)
             (strncmp(edata->prev_execute_data->func->common.function_name->val, "create_function", 15) == 0))
         ) {
             tmp->type = XFUNC_NORMAL;
-            tmp->function = strdup("{internal eval}");
+            tmp->function = estrdup("{internal eval}");
         } else if (
             edata &&
             edata->prev_execute_data &&
@@ -195,13 +195,13 @@ void build_fname(func_t *tmp, zend_execute_data *edata TSRMLS_DC)
     } // edata && edata->func
 }
 
-function_stack_entry_t *add_stack_frame(zend_execute_data *zdata, int type TSRMLS_DC)
+function_stack_entry_t *add_stack_frame(zend_execute_data *zdata)
 {
     function_stack_entry_t *tmp = emalloc(sizeof(function_stack_entry_t));
     build_fname(&(tmp->function), zdata TSRMLS_CC);
 
     if (!tmp->function.type) {
-        tmp->function.function = strdup("{main}");
+        tmp->function.function = estrdup("{main}");
         tmp->function.class    = NULL;
         tmp->function.type     = XFUNC_MAIN;
     }
@@ -221,15 +221,14 @@ void profiler_function_end(function_stack_entry_t *fse TSRMLS_DC)
 
 void my_execute_ex(zend_execute_data *execute_data TSRMLS_DC)
 {
-    zend_execute_data *prev_edata = execute_data->prev_execute_data;
-    function_stack_entry_t *fse = add_stack_frame(prev_edata, 2 TSRMLS_CC);
-
+    function_stack_entry_t *fse = add_stack_frame(execute_data);
     zend_printf("->%s\n", fse->function.function);
 
     profiler_function_begin(fse TSRMLS_CC);
     original_zend_execute_ex(execute_data TSRMLS_CC);
     profiler_function_end(fse TSRMLS_CC);
 
+    efree(fse->function.function);
     efree(fse);
 }
 
