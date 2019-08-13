@@ -1,18 +1,7 @@
 <?php
 
-function baz()
-{
+$callable = function() {
     return 'baz';
-}
+};
 
-function bar()
-{
-    return baz();
-}
-
-function foo()
-{
-    return bar();
-}
-
-var_dump(foo());
+$callable();

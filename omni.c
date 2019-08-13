@@ -7,6 +7,7 @@
 #include "php_ini.h"
 #include "ext/standard/info.h"
 #include "php_omni.h"
+#include "Zend/zend_smart_str.h"
 
 #define XFUNC_UNKNOWN        0x00
 #define XFUNC_NORMAL         0x01
@@ -102,6 +103,26 @@ int function_name_is_closure(char *fname)
     return 0;
 }
 
+char* wrap_closure_location_around_function_name(zend_op_array *opa, char *fname)
+{
+    smart_str str = {0};
+    smart_str_appendl(&str, fname, strlen(fname) - 1);
+
+    char *foo = xdebug_sprintf(
+        ":%s:%d-%d}",
+        opa->filename->val,
+        opa->line_start,
+        opa->line_end
+    );
+
+    smart_str_appends(&str, foo);
+
+    char* bar = estrdup(ZSTR_VAL(str.s));
+    smart_str_free(&str);
+
+    return bar;
+}
+
 void build_fname(func_t *tmp, zend_execute_data *edata TSRMLS_DC)
 {
     memset(tmp, 0, sizeof(func_t));
@@ -142,7 +163,7 @@ void build_fname(func_t *tmp, zend_execute_data *edata TSRMLS_DC)
 
         if (edata->func->common.function_name) {
             if (function_name_is_closure(edata->func->common.function_name->val)) {
-                tmp->function = estrdup("{closure_mas_tem_que_arrumar}");
+                tmp->function = wrap_closure_location_around_function_name(&edata->func->op_array, edata->func->common.function_name->val);
             } else if (strncmp(edata->func->common.function_name->val, "call_user_func", 14) == 0) {
                 tmp->function = estrdup("{call_user_func}");
             } else {
