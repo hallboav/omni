@@ -225,6 +225,8 @@ function_stack_entry_t *add_stack_frame(zend_execute_data *zdata)
         tmp->function.function = estrdup("{main}");
         tmp->function.class    = NULL;
         tmp->function.type     = XFUNC_MAIN;
+    } else if (tmp->function.type & XFUNC_INCLUDES) {
+
     }
 
     return tmp;
