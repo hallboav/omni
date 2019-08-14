@@ -218,6 +218,21 @@ void build_fname(func_t *tmp, zend_execute_data *edata TSRMLS_DC)
     } // edata && edata->func
 }
 
+int find_line_number_for_current_execute_point(zend_execute_data *edata TSRMLS_DC)
+{
+    zend_execute_data *ptr = edata;
+
+    while (ptr && (!ptr->func || !ZEND_USER_CODE(ptr->func->type))) {
+        ptr = ptr->prev_execute_data;
+    }
+
+    if (ptr && ptr->opline) {
+        return ptr->opline->lineno;
+    }
+
+    return 0;
+}
+
 function_stack_entry_t *add_stack_frame(zend_execute_data *zdata, zend_op_array *op_array)
 {
     function_stack_entry_t *tmp = emalloc(sizeof(function_stack_entry_t));
@@ -225,8 +240,9 @@ function_stack_entry_t *add_stack_frame(zend_execute_data *zdata, zend_op_array 
     tmp->filename = NULL;
     tmp->lineno = 0;
 
-    zend_op  *cur_opcode;
-    zend_op **opline_ptr = (zend_op**) &zdata->opline;
+    if (zdata->opline && zdata->opline->lineno) {
+        tmp->lineno = zdata->opline->lineno;
+    }
 
     tmp->filename = estrdup(op_array->filename->val);
 
@@ -237,15 +253,20 @@ function_stack_entry_t *add_stack_frame(zend_execute_data *zdata, zend_op_array 
         tmp->function.class    = NULL;
         tmp->function.type     = FUNC_MAIN;
     } else if (tmp->function.type & FUNC_INCLUDES) {
-        tmp->lineno = 0;
+        zend_op **opline_ptr = (zend_op**) &zdata->opline;
+
         if (opline_ptr) {
-            cur_opcode = *opline_ptr;
+            zend_op *cur_opcode = *opline_ptr;
             if (cur_opcode) {
                 tmp->lineno = cur_opcode->lineno;
             }
         }
 
-        tmp->include_filename = estrdup(zend_get_executed_filename(TSRMLS_C));
+        if (tmp->function.type != FUNC_EVAL) {
+            tmp->include_filename = estrdup(zend_get_executed_filename(TSRMLS_C));
+        }
+    } else {
+        tmp->lineno = find_line_number_for_current_execute_point(zdata TSRMLS_CC);
     }
 
     return tmp;
@@ -261,36 +282,105 @@ void profiler_function_end(function_stack_entry_t *fse TSRMLS_DC)
 
 }
 
+const char *get_executed_filename(zend_execute_data *zed)
+{
+    while (zed && (!zed->func || !ZEND_USER_CODE(zed->func->type))) {
+        zed = zed->prev_execute_data;
+    }
+
+    if (zed) {
+        return ZSTR_VAL(zed->func->op_array.filename);
+    }
+
+    return "[no active file]";
+}
+
+int is_runtime_created_function(const char *filename)
+{
+
+}
+
 void my_execute_ex(zend_execute_data *execute_data TSRMLS_DC)
 {
-    zend_op_array          *op_array = &(execute_data->func->op_array);
-    function_stack_entry_t *fse = add_stack_frame(execute_data, op_array);
+    char *current_filename;
+    uint32_t current_lineno;
 
-    zend_printf("->");
-    if (fse->function.class != 0) {
-        const char *sep = fse->function.type == FUNC_STATIC_MEMBER ? "::" : "->";
-        zend_printf("%s%s", fse->function.class, sep);
+    const uint32_t unparsed_lineno = zend_get_executed_lineno();
+    const char *unparsed_filename = zend_get_executed_filename();
+    const size_t unparsed_filename_len = strlen(unparsed_filename);
+
+    const char *closing_parenthesis_ptr = unparsed_filename + (unparsed_filename_len - 28);
+    if (unparsed_filename_len >= 28 && strcmp(closing_parenthesis_ptr, ") : runtime-created function") == 0) {
+        const char *opening_parenthesis_ptr = closing_parenthesis_ptr;
+        while (--opening_parenthesis_ptr && opening_parenthesis_ptr[0] != '(');
+
+        // lineno
+        size_t buf_size = closing_parenthesis_ptr - opening_parenthesis_ptr;
+        char *buf = (char *) emalloc(buf_size);
+        memset(buf, 0, buf_size);
+
+        strncpy(buf, opening_parenthesis_ptr + 1, buf_size - 1);
+        current_lineno = atoi(buf);
+        efree(buf);
+
+        // unparsed_filename
+        buf_size = opening_parenthesis_ptr - unparsed_filename + 1;
+        current_filename = (char *) emalloc(buf_size);
+        memset(current_filename, 0, buf_size);
+
+        strncpy(current_filename, unparsed_filename, buf_size - 1);
+    } else {
+        current_filename = estrdup(unparsed_filename);
+        current_lineno = unparsed_lineno;
     }
-    zend_printf("%s at %s:%d (%s)\n", fse->function.function, fse->filename, fse->lineno, fse->include_filename);
 
-    profiler_function_begin(fse TSRMLS_CC);
+    zend_printf("%s:%d", current_filename, current_lineno);
+    efree(current_filename);
+
+    zend_execute_data *prev_edata = execute_data->prev_execute_data;
+    if (prev_edata) {
+        const char *caller_filename = get_executed_filename(prev_edata);
+        uint32_t caller_lineno = prev_edata->opline->lineno;
+        zend_printf(" called at %s:%u", caller_filename, caller_lineno);
+    }
+
+    zend_printf("\n");
+
+
+
+
+    // function_stack_entry_t *fse = add_stack_frame(execute_data, op_array);
+
+    // zend_printf("->");
+    // if (fse->function.class != 0) {
+    //     const char *sep = fse->function.type == FUNC_STATIC_MEMBER ? "::" : "->";
+    //     zend_printf("%s%s", fse->function.class, sep);
+    // }
+    // zend_printf(
+    //     "%s at %s:%d\n",
+    //     fse->function.function,
+    //     fse->filename,
+    //     fse->lineno
+    // );
+
+    // profiler_function_begin(fse TSRMLS_CC);
     original_zend_execute_ex(execute_data TSRMLS_CC);
-    profiler_function_end(fse TSRMLS_CC);
+    // profiler_function_end(fse TSRMLS_CC);
 
-    efree(fse->function.function);
-    if (fse->function.class != 0) {
-        efree(fse->function.class);
-    }
+    // efree(fse->function.function);
+    // if (fse->function.class != 0) {
+    //     efree(fse->function.class);
+    // }
 
-    if (fse->filename != 0) {
-        efree(fse->filename);
-    }
+    // if (fse->filename != 0) {
+    //     efree(fse->filename);
+    // }
 
-    if (fse->include_filename != 0) {
-        efree(fse->include_filename);
-    }
+    // if (fse->include_filename != 0) {
+    //     efree(fse->include_filename);
+    // }
 
-    efree(fse);
+    // efree(fse);
 }
 
 // PHP_INI_BEGIN()
