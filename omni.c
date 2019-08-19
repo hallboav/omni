@@ -196,17 +196,41 @@ void build_fname(func_t *func, zend_execute_data *edata TSRMLS_DC)
 
 void my_execute_ex(zend_execute_data *execute_data TSRMLS_DC)
 {
-    original_zend_execute_ex(execute_data TSRMLS_CC);
-
     func_t *func = emalloc(sizeof(func_t));
-
     build_fname(func, execute_data);
+
+    if (!func->type) {
+        func->class = NULL;
+        func->fname = estrdup("{main}");
+        func->type  = FUNC_MAIN;
+    }
+
+    //////////////
+    // PRINTING //
+    //////////////
+
     if (NULL != func->class) {
         zend_printf("%s%s", func->class, FUNC_MEMBER == func->type ? "->" : "::");
     }
 
-    zend_printf("%s", func->fname);
+    zend_printf("%s [%d]\n", func->fname, func->type);
+
+    /////////////
+    // FREEING //
+    /////////////
+
+    if (NULL != func->class) {
+        efree(func->class);
+    }
+
+    efree(func->fname);
     efree(func);
+
+    ///////////////////
+    // ORIGINAL CALL //
+    ///////////////////
+
+    original_zend_execute_ex(execute_data TSRMLS_CC);
 }
 
 
