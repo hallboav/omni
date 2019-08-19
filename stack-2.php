@@ -1,6 +1,6 @@
 <?php
 
-function foo()
+function bar()
 {
-
+    baz();
 }

@@ -9,56 +9,28 @@
 #include "php_omni.h"
 #include "Zend/zend_smart_str.h"
 
-#define FUNC_UNKNOWN        0x00
-#define FUNC_NORMAL         0x01
-#define FUNC_STATIC_MEMBER  0x02
-#define FUNC_MEMBER         0x03
-
-#define FUNC_INCLUDES       0x10
-#define FUNC_EVAL           0x10
-#define FUNC_INCLUDE        0x11
-#define FUNC_INCLUDE_ONCE   0x12
-#define FUNC_REQUIRE        0x13
-#define FUNC_REQUIRE_ONCE   0x14
-#define FUNC_MAIN           0x15
-
-#define FUNC_ZEND_PASS      0x20
-
-typedef struct _func_t {
-    char *class;
-    char *function;
-    int   type;
-} func_t;
-
-typedef struct _function_stack_entry_t {
-    func_t  function;
-    char   *filename;
-    int     lineno;
-    char   *include_filename;
-} function_stack_entry_t;
-
 // ZEND_DECLARE_MODULE_GLOBALS(omni)
 
-void my_error_cb(int type, const char *error_filename, const uint error_lineno, const char *format, va_list args)
-{
-    va_list args_copy;
-    va_copy(args_copy, args);
+// void my_error_cb(int type, const char *error_filename, const uint error_lineno, const char *format, va_list args)
+// {
+//     va_list args_copy;
+//     va_copy(args_copy, args);
 
-    char *buffer;
-    vspprintf(&buffer, 0, format, args);
+//     char *buffer;
+//     vspprintf(&buffer, 0, format, args);
 
-    zend_printf(
-        "type: %d\nfilename: %s\nline: %u\nreason: %s.\n\n\n",
-        type,
-        error_filename,
-        error_lineno,
-        buffer
-    );
+//     zend_printf(
+//         "type: %d\nfilename: %s\nline: %u\nreason: %s.\n\n\n",
+//         type,
+//         error_filename,
+//         error_lineno,
+//         buffer
+//     );
 
-    efree(buffer);
+//     efree(buffer);
 
-    original_zend_error_cb(type, error_filename, error_lineno, format, args_copy);
-}
+//     original_zend_error_cb(type, error_filename, error_lineno, format, args_copy);
+// }
 
 char *my_sprintf(const char* fmt, ...)
 {
@@ -66,7 +38,7 @@ char *my_sprintf(const char* fmt, ...)
     int     size = 1;
     va_list args;
 
-    new_str = (char *) malloc(size);
+    new_str = (char *) emalloc(size);
 
     for (;;) {
         int n;
@@ -78,12 +50,14 @@ char *my_sprintf(const char* fmt, ...)
         if (n > -1 && n < size) {
             break;
         }
+
         if (n < 0) {
             size *= 2;
         } else {
             size = n + 1;
         }
-        new_str = (char *) realloc(new_str, size);
+
+        new_str = (char *) erealloc(new_str, size);
     }
 
     return new_str;
@@ -105,86 +79,89 @@ int function_name_is_closure(char *fname)
     return 0;
 }
 
-char* wrap_closure_location_around_function_name(zend_op_array *opa, char *fname)
+char* wrap_closure_location(zend_op_array *opa, char *fname)
 {
     smart_str str = {0};
     smart_str_appendl(&str, fname, strlen(fname) - 1);
 
-    char *foo = my_sprintf(
+    char *tmp = my_sprintf(
         ":%s:%d-%d}",
         opa->filename->val,
         opa->line_start,
         opa->line_end
     );
 
-    smart_str_appends(&str, foo);
+    smart_str_appends(&str, tmp);
+    efree(tmp);
 
-    char* bar = estrdup(ZSTR_VAL(str.s));
+    smart_str_0(&str);
+
+    char* new_fname = estrdup(str.s->val);
     smart_str_free(&str);
 
-    return bar;
+    return new_fname;
 }
 
-void build_fname(func_t *tmp, zend_execute_data *edata TSRMLS_DC)
+void build_fname(func_t *func, zend_execute_data *edata TSRMLS_DC)
 {
-    memset(tmp, 0, sizeof(func_t));
+    memset(func, 0, sizeof(func_t));
 
 #if PHP_VERSION_ID >= 70100
     if (edata && edata->func && edata->func == (zend_function*) &zend_pass_function) {
-        tmp->type     = FUNC_ZEND_PASS;
-        tmp->function = estrdup("{zend_pass}");
+        func->type     = FUNC_ZEND_PASS;
+        func->fname = estrdup("{zend_pass}");
     } else
 #endif
 
     if (edata && edata->func) {
-        tmp->type = FUNC_NORMAL;
+        func->type = FUNC_NORMAL;
+
+        ////////////////
+        // CLASSNAMES //
+        ////////////////
 
 #if PHP_VERSION_ID >= 70100
         if ((Z_TYPE(edata->This)) == IS_OBJECT) {
 #else
         if (edata->This.value.obj) {
 #endif
+            func->type = FUNC_MEMBER;
 
-            tmp->type = FUNC_MEMBER;
             if (edata->func->common.scope && strcmp(edata->func->common.scope->name->val, "class@anonymous") == 0) {
-                tmp->class = estrdup(my_sprintf(
+                func->class = my_sprintf(
                     "{anonymous-class:%s:%d-%d}",
                     edata->func->common.scope->info.user.filename->val,
                     edata->func->common.scope->info.user.line_start,
                     edata->func->common.scope->info.user.line_end
-                ));
+                );
             } else {
-                tmp->class = estrdup(edata->This.value.obj->ce->name->val);
+                func->class = estrdup(edata->This.value.obj->ce->name->val);
             }
-        } else {
-            if (edata->func->common.scope) {
-                tmp->type = FUNC_STATIC_MEMBER;
-                tmp->class = estrdup(edata->func->common.scope->name->val);
-            }
+        } else if (edata->func->common.scope) {
+            func->type = FUNC_STATIC_MEMBER;
+            func->class = estrdup(edata->func->common.scope->name->val);
         }
+
+        /////////////
+        // FUNÇÕES //
+        /////////////
 
         if (edata->func->common.function_name) {
             if (function_name_is_closure(edata->func->common.function_name->val)) {
-                tmp->function = wrap_closure_location_around_function_name(&edata->func->op_array, edata->func->common.function_name->val);
-            } else if (strncmp(edata->func->common.function_name->val, "call_user_func", 14) == 0) {
-                tmp->function = estrdup("{call_user_func}");
+                func->fname = wrap_closure_location(&edata->func->op_array, edata->func->common.function_name->val);
             } else {
-                tmp->function = estrdup(edata->func->common.function_name->val);
+                func->fname = estrdup(edata->func->common.function_name->val);
             }
         } else if (
-            edata &&
-            edata->func &&
             edata->func->type == ZEND_EVAL_CODE &&
             edata->prev_execute_data &&
             edata->prev_execute_data->func &&
             edata->prev_execute_data->func->common.function_name &&
             ((strncmp(edata->prev_execute_data->func->common.function_name->val, "assert", 6) == 0) ||
-            (strncmp(edata->prev_execute_data->func->common.function_name->val, "create_function", 15) == 0))
+             (strncmp(edata->prev_execute_data->func->common.function_name->val, "create_function", 15) == 0))
         ) {
-            tmp->type = FUNC_NORMAL;
-            tmp->function = estrdup("{internal-eval}");
+            func->fname = estrdup("{internal eval}");
         } else if (
-            edata &&
             edata->prev_execute_data &&
             edata->prev_execute_data->func->type == ZEND_USER_FUNCTION &&
             edata->prev_execute_data->opline &&
@@ -192,200 +169,176 @@ void build_fname(func_t *tmp, zend_execute_data *edata TSRMLS_DC)
         ) {
             switch (edata->prev_execute_data->opline->extended_value) {
                 case ZEND_EVAL:
-                    tmp->type = FUNC_EVAL;
+                    func->type = FUNC_EVAL;
                     break;
                 case ZEND_INCLUDE:
-                    tmp->type = FUNC_INCLUDE;
+                    func->type = FUNC_INCLUDE;
                     break;
                 case ZEND_REQUIRE:
-                    tmp->type = FUNC_REQUIRE;
+                    func->type = FUNC_REQUIRE;
                     break;
                 case ZEND_INCLUDE_ONCE:
-                    tmp->type = FUNC_INCLUDE_ONCE;
+                    func->type = FUNC_INCLUDE_ONCE;
                     break;
                 case ZEND_REQUIRE_ONCE:
-                    tmp->type = FUNC_REQUIRE_ONCE;
+                    func->type = FUNC_REQUIRE_ONCE;
                     break;
                 default:
-                    tmp->type = FUNC_UNKNOWN;
-                    break;
+                    func->type = FUNC_UNKNOWN;
             }
-        } else if (edata && edata->prev_execute_data) {
-            build_fname(tmp, edata->prev_execute_data);
+        } else if (edata->prev_execute_data) {
+            build_fname(func, edata->prev_execute_data);
         } else {
-            tmp->type = FUNC_UNKNOWN;
+            func->type = FUNC_UNKNOWN;
         }
     } // edata && edata->func
 }
 
-int find_line_number_for_current_execute_point(zend_execute_data *edata TSRMLS_DC)
-{
-    zend_execute_data *ptr = edata;
-
-    while (ptr && (!ptr->func || !ZEND_USER_CODE(ptr->func->type))) {
-        ptr = ptr->prev_execute_data;
-    }
-
-    if (ptr && ptr->opline) {
-        return ptr->opline->lineno;
-    }
-
-    return 0;
-}
-
-function_stack_entry_t *add_stack_frame(zend_execute_data *zdata, zend_op_array *op_array)
-{
-    function_stack_entry_t *tmp = emalloc(sizeof(function_stack_entry_t));
-    tmp->include_filename = NULL;
-    tmp->filename = NULL;
-    tmp->lineno = 0;
-
-    if (zdata->opline && zdata->opline->lineno) {
-        tmp->lineno = zdata->opline->lineno;
-    }
-
-    tmp->filename = estrdup(op_array->filename->val);
-
-    build_fname(&(tmp->function), zdata TSRMLS_CC);
-
-    if (!tmp->function.type) {
-        tmp->function.function = estrdup("{main}");
-        tmp->function.class    = NULL;
-        tmp->function.type     = FUNC_MAIN;
-    } else if (tmp->function.type & FUNC_INCLUDES) {
-        zend_op **opline_ptr = (zend_op**) &zdata->opline;
-
-        if (opline_ptr) {
-            zend_op *cur_opcode = *opline_ptr;
-            if (cur_opcode) {
-                tmp->lineno = cur_opcode->lineno;
-            }
-        }
-
-        if (tmp->function.type != FUNC_EVAL) {
-            tmp->include_filename = estrdup(zend_get_executed_filename(TSRMLS_C));
-        }
-    } else {
-        tmp->lineno = find_line_number_for_current_execute_point(zdata TSRMLS_CC);
-    }
-
-    return tmp;
-}
-
-void profiler_function_begin(function_stack_entry_t *fse TSRMLS_DC)
-{
-
-}
-
-void profiler_function_end(function_stack_entry_t *fse TSRMLS_DC)
-{
-
-}
-
 void my_execute_ex(zend_execute_data *execute_data TSRMLS_DC)
 {
-    const char *filename;
-    // char *op_array_function_name;
-    // char *common_function_name;
-    uint32_t lineno;
+    original_zend_execute_ex(execute_data TSRMLS_CC);
 
-    if (execute_data->func && ZEND_USER_CODE(execute_data->func->common.type)) {
-        filename = ZSTR_VAL(execute_data->func->op_array.filename);
+    func_t *func = emalloc(sizeof(func_t));
 
-        if (execute_data->opline->opcode == ZEND_HANDLE_EXCEPTION) {
-            if (EG(opline_before_exception)) {
-                lineno = EG(opline_before_exception)->lineno;
-            } else {
-                lineno = execute_data->func->op_array.line_end;
-            }
-        } else {
-            lineno = execute_data->opline->lineno;
-        }
-    } else {
-        filename = NULL;
-        lineno = 0;
+    build_fname(func, execute_data);
+    if (NULL != func->class) {
+        zend_printf("%s%s", func->class, FUNC_MEMBER == func->type ? "->" : "::");
     }
 
-    // https://github.com/php/php-src/blob/master/Zend/zend_builtin_functions.c
-
-    if (filename) {
-        zend_printf("%s:%d\n", filename, lineno);
-    } else {
-        zend_execute_data *prev = execute_data->prev_execute_data;
-
-        if (prev->func && ZEND_USER_CODE(prev->func->common.type)) {
-            zend_printf(") called at [%s:%d]\n", ZSTR_VAL(prev->func->op_array.filename), prev->opline->lineno);
-            break;
-        }
-    }
+    zend_printf("%s", func->fname);
+    efree(func);
 
 
 
-    // if (execute_data->func && ZEND_USER_CODE(execute_data->func->common.type) {
-    //     filename = estrdup(execute_data->func->op_array.filename->val);
 
-    //     if (execute_data->func->common.function_name) {
-    //         common_function_name = estrdup(execute_data->func->common.function_name->val);
+
+
+
+    // if (execute_data->prev_execute_data->func && ZEND_USER_CODE(execute_data->prev_execute_data->func->common.type)) {
+    //     filename = ZSTR_VAL(execute_data->prev_execute_data->func->op_array.filename);
+
+    //     if (execute_data->prev_execute_data->opline->opcode == ZEND_HANDLE_EXCEPTION) {
+    //         if (EG(opline_before_exception)) {
+    //             lineno = EG(opline_before_exception)->lineno;
+    //         } else {
+    //             lineno = execute_data->prev_execute_data->func->op_array.line_end;
+    //         }
     //     } else {
-    //         common_function_name = estrdup("{common_function_name_unknown}");
+    //         lineno = execute_data->prev_execute_data->opline->lineno;
+    //     }
+    // } else {
+    //     filename = NULL;
+    //     lineno = 0;
+    // }
+
+    // object = (Z_TYPE(execute_data->This) == IS_OBJECT) ? Z_OBJ(execute_data->This) : NULL;
+
+    //
+
+    // if (execute_data->func) {
+    //     zend_string *zend_function_name;
+
+    //     if (execute_data->func->common.scope && execute_data->func->common.scope->trait_aliases) {
+    //         zend_function_name = zend_resolve_method_name(object ? object->ce : execute_data->func->common.scope, execute_data->func);
+    //     } else {
+    //         zend_function_name = execute_data->func->common.function_name;
     //     }
 
-    //     if (execute_data->func->op_array.function_name) {
-    //         op_array_function_name = estrdup(execute_data->func->op_array.function_name->val);
+    //     if (zend_function_name != NULL) {
+    //         function_name = ZSTR_VAL(zend_function_name);
     //     } else {
-    //         op_array_function_name = estrdup("{op_array_function_name_unknown}");
+    //         function_name = NULL;
+    //     }
+    // } else {
+    //     function_name = NULL;
+    // }
+
+    // if (function_name) {
+    //     if (object) {
+    //         if (execute_data->func->common.scope) {
+    //             class_name = execute_data->func->common.scope->name;
+    //         } else if (object->handlers->get_class_name == zend_std_get_class_name) {
+    //             class_name = object->ce->name;
+    //         } else {
+    //             class_name = object->handlers->get_class_name(object);
+    //         }
+
+    //         call_type = "->";
+    //     } else if (execute_data->func->common.scope) {
+    //         class_name = func->common.scope->name;
+    //         call_type = "::";
+    //     } else {
+    //         class_name = NULL;
+    //         call_type = NULL;
+    //     }
+    // } else {
+    //     if (!execute_data->prev_execute_data->func || !ZEND_USER_CODE(execute_data->prev_execute_data->func->common.type) || execute_data->prev_execute_data->opline->opcode != ZEND_INCLUDE_OR_EVAL) {
+    //         /* can happen when calling eval from a custom sapi */
+    //         function_name = "unknown";
+    //     } else
+    //     switch (execute_data->prev_execute_data->opline->extended_value) {
+    //         case ZEND_EVAL:
+    //             function_name = "eval";
+    //             break;
+    //         case ZEND_INCLUDE:
+    //             function_name = "include";
+    //             break;
+    //         case ZEND_REQUIRE:
+    //             function_name = "require";
+    //             break;
+    //         case ZEND_INCLUDE_ONCE:
+    //             function_name = "include_once";
+    //             break;
+    //         case ZEND_REQUIRE_ONCE:
+    //             function_name = "require_once";
+    //             break;
+    //         default:
+    //             function_name = "unknown";
+    //             break;
+    //     }
+
+    //     call_type = NULL;
+    // }
+
+    // if (class_name) {
+    //     ZEND_PUTS(ZSTR_VAL(class_name));
+    //     ZEND_PUTS(call_type);
+
+    //     if (object && !func->common.scope && object->handlers->get_class_name != zend_std_get_class_name) {
+    //         zend_string_release_ex(class_name, 0);
     //     }
     // }
 
+    // zend_printf("%s(", function_name);
 
+    // if (filename) {
+    //     zend_printf(") called at [%s:%d]\n", filename, lineno);
+    // } else {
+    //     zend_execute_data *prev_call = execute_data;
+    //     zend_execute_data *prev = execute_data->prev_execute_data;
 
-    // zend_printf(
-    //     "op_array_function_name: %s\ncommon_function_name: %s\nfilename: %s\n\n",
-    //     op_array_function_name,
-    //     common_function_name,
-    //     filename
-    // );
+    //     while (prev) {
+    //         if (prev_call && prev_call->func && !ZEND_USER_CODE(prev_call->func->common.type)) {
+    //             prev = NULL;
 
-    // efree(filename);
-    // efree(op_array_function_name);
+    //             break;
+    //         }
 
-    original_zend_execute_ex(execute_data TSRMLS_CC);
+    //         if (prev->func && ZEND_USER_CODE(prev->func->common.type)) {
+    //             zend_printf(") called aaat [%s:%d]\n", ZSTR_VAL(prev->func->op_array.filename), prev->opline->lineno);
+
+    //             break;
+    //         }
+
+    //         prev_call = prev;
+    //         prev = prev->prev_execute_data;
+    //     }
+
+    //     if (!prev) {
+    //         ZEND_PUTS(")\n");
+    //     }
 }
 
-// {
-//     function_stack_entry_t *fse = add_stack_frame(execute_data, edata->func->op_array);
-
-//     zend_printf("->");
-//     if (fse->function.class != 0) {
-//         const char *sep = fse->function.type == FUNC_STATIC_MEMBER ? "::" : "->";
-//         zend_printf("%s%s", fse->function.class, sep);
-//     }
-//     zend_printf(
-//         "%s at %s:%d\n",
-//         fse->function.function,
-//         fse->filename,
-//         fse->lineno
-//     );
-
-//     profiler_function_begin(fse TSRMLS_CC);
-//     original_zend_execute_ex(execute_data TSRMLS_CC);
-//     profiler_function_end(fse TSRMLS_CC);
-
-//     efree(fse->function.function);
-//     if (fse->function.class != 0) {
-//         efree(fse->function.class);
-//     }
-
-//     if (fse->filename != 0) {
-//         efree(fse->filename);
-//     }
-
-//     if (fse->include_filename != 0) {
-//         efree(fse->include_filename);
-//     }
-
-//     efree(fse);
-// }
 
 // PHP_INI_BEGIN()
 //     STD_PHP_INI_ENTRY("omni.global_value",      "42", PHP_INI_ALL, OnUpdateLong, global_value, zend_omni_globals, omni_globals)

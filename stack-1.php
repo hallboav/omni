@@ -1,6 +1,8 @@
 <?php
 $startOf = 'file';
 
+include 'stack-2.php';
+
 function baz()
 {
     $do = 'nothing';
@@ -12,11 +14,7 @@ function baz()
     echo PHP_EOL, PHP_EOL;
     echo '---- Exception ----', PHP_EOL;
     echo (new \Exception())->getTraceAsString(), PHP_EOL;
-}
-
-function bar()
-{
-    baz();
+    echo PHP_EOL, PHP_EOL;
 }
 
 function foo()
