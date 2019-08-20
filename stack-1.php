@@ -1,7 +1,7 @@
 <?php
 $startOf = 'file';
 
-include 'stack-2.php';
+include_once 'stack-2.php';
 
 function baz()
 {
