@@ -194,7 +194,7 @@ void build_function_name(func_t *func, zend_execute_data *edata TSRMLS_DC)
     } // edata && edata->func
 }
 
-const char *get_function_name(func_t *func)
+char *get_function_name(func_t *func)
 {
     switch (func->type) {
         case FUNC_NORMAL:
@@ -260,6 +260,8 @@ void my_execute_ex(zend_execute_data *execute_data TSRMLS_DC)
     }
 
     prev_edata = execute_data->prev_execute_data;
+
+    // Se tem prev_execute_data, então não é a main
     if (NULL != prev_edata && NULL != prev_edata->func && ZEND_USER_CODE(prev_edata->func->common.type)) {
         filename = prev_edata->func->op_array.filename->val;
 
@@ -304,8 +306,9 @@ void my_execute_ex(zend_execute_data *execute_data TSRMLS_DC)
     // PRINTING //
     //////////////
 
-    const char *function_name = get_function_name(func);
-    zend_printf("%s [%s:%d]\n", function_name, NULL != filename ? filename : "?", lineno);
+    int call_count = 9;
+    char *function_name = get_function_name(func);
+    zend_printf("#%-2d %s [%s:%d]\n", call_count, function_name, NULL != filename ? filename : "?", lineno);
     efree(function_name);
 
     /////////////

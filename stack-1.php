@@ -3,23 +3,30 @@ $startOf = 'file';
 
 include_once 'stack-2.php';
 
-function baz()
+$anonClass = new class() {
+    public function anonMethod()
+    {
+        (new \Foo\Bar\Baz)->bazMethod();
+    }
+};
+
+$__lambda_func = create_function('', <<<'FN'
+$dummy = 'foo';
+global $anonClass;
+$anonClass->anonMethod();
+return 4;
+FN);
+
+function my_assert_handler($file, $line, $code)
 {
-    $do = 'nothing';
-
-    echo PHP_EOL, PHP_EOL, PHP_EOL, PHP_EOL;
-    echo '---- debug_print_backtrace() ----', PHP_EOL;
-    debug_print_backtrace();
-
-    echo PHP_EOL, PHP_EOL;
-    echo '---- Exception ----', PHP_EOL;
-    echo (new \Exception())->getTraceAsString(), PHP_EOL;
-    echo PHP_EOL, PHP_EOL;
+    $dummy = 3;
+    global $__lambda_func;
+    $__lambda_func();
 }
 
-function foo()
-{
-    bar();
-}
+assert_options(ASSERT_ACTIVE,     1);
+assert_options(ASSERT_WARNING,    0);
+assert_options(ASSERT_QUIET_EVAL, 1);
+assert_options(ASSERT_CALLBACK,   'my_assert_handler');
 
-foo();
+assert(false, 'is false!!!');
