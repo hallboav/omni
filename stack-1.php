@@ -3,10 +3,20 @@ $startOf = 'file';
 
 include_once 'stack-2.php';
 
-$anonClass = new class() {
-    public function anonMethod()
+trait CustomTrait
+{
+    public function traitMethod()
     {
         (new \Foo\Bar\Baz)->bazMethod();
+    }
+}
+
+$anonClass = new class() {
+    use CustomTrait;
+
+    public function anonMethod()
+    {
+        $this->traitMethod();
     }
 };
 
