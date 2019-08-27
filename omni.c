@@ -40,6 +40,78 @@ char *my_sprintf(const char* fmt, ...)
     return new_str;
 }
 
+void build_function_name(func_t *si, zend_execute_data *edata)
+{
+    memset(si, 0, sizeof(func_t));
+
+#if PHP_VERSION_ID >= 70100
+    if (edata && edata->func && edata->func == (zend_function *) &zend_pass_function) {
+        si->function = "{zend_pass}";
+
+        return;
+    } else
+#endif
+
+    if (!(edata && edata->func)) {
+        return;
+    }
+
+#if PHP_VERSION_ID >= 70100
+    if ((Z_TYPE(edata->This)) == IS_OBJECT) {
+#else
+    if (edata->This.value.obj) {
+#endif
+        if (edata->func->common.scope) {
+            si->class_name = edata->func->common.scope->name->val;
+        } else {
+            si->class_name = edata->This.value.obj->ce->name->val;
+        }
+
+        si->call_type = "->";
+    } else if (edata->func->common.scope) {
+        si->class_name = edata->func->common.scope->name->val;
+        si->call_type = "::";
+    }
+
+    if (edata->func->common.function_name) {
+        si->function = edata->func->common.function_name->val;
+    } else if (
+        edata->func->type == ZEND_EVAL_CODE &&
+        edata->prev_execute_data &&
+        edata->prev_execute_data->func &&
+        edata->prev_execute_data->func->common.function_name
+    ) {
+        si->function = "{internal_eval}";
+    } else if (
+        edata->prev_execute_data &&
+        edata->prev_execute_data->func->type == ZEND_USER_FUNCTION &&
+        edata->prev_execute_data->opline &&
+        edata->prev_execute_data->opline->opcode == ZEND_INCLUDE_OR_EVAL
+    ) {
+        switch (edata->prev_execute_data->opline->extended_value) {
+            case ZEND_EVAL:
+                si->function = "{eval}";
+                break;
+            case ZEND_INCLUDE:
+                si->function = "{include}";
+                break;
+            case ZEND_REQUIRE:
+                si->function = "{require}";
+                break;
+            case ZEND_INCLUDE_ONCE:
+                si->function = "{include_once}";
+                break;
+            case ZEND_REQUIRE_ONCE:
+                si->function = "{require_once}";
+                break;
+            default:
+                si->function = "{unknown}";
+        }
+    } else if (edata->prev_execute_data) {
+        build_function_name(si, edata);
+    }
+}
+
 void my_execute_ex(zend_execute_data *execute_data TSRMLS_DC)
 {
     ///////////////////
@@ -52,92 +124,19 @@ void my_execute_ex(zend_execute_data *execute_data TSRMLS_DC)
     // INFORMATION GATHERING //
     ///////////////////////////
 
-    zend_string *class_name;
-    const char *function_name;
-    const char *call_type;
-    zend_execute_data *prev_execute_data;
-    zend_object *object;
-    zend_function *func;
-
-    prev_execute_data = execute_data->prev_execute_data;
-    if (prev_execute_data && prev_execute_data->func) {
-
-        func = prev_execute_data->func;
-
-        object = (Z_TYPE(prev_execute_data->This)) == IS_OBJECT ? Z_OBJ(prev_execute_data->This) : NULL;
-
-        zend_string *zend_function_name;
-        if (func->common.scope && func->common.scope->trait_aliases) {
-            // Exemplo #5 Conflict Resolution
-            // https://www.php.net/manual/pt_BR/language.oop5.traits.php
-            zend_function_name = zend_resolve_method_name(object ? object->ce : func->common.scope, func);
-        } else {
-            zend_function_name = func->common.function_name;
-        }
-
-        if (zend_function_name != NULL) {
-            function_name = ZSTR_VAL(zend_function_name);
-        } else {
-            function_name = NULL;
-        }
-
-        if (function_name) {
-            if (object) {
-                if (func->common.scope) {
-                    class_name = func->common.scope->name;
-                } else if (object->handlers->get_class_name == std_object_handlers.get_class_name) {
-                    class_name = object->ce->name;
-                } else {
-                    class_name = object->handlers->get_class_name(object);
-                }
-
-                call_type = "->";
-            } else if (func->common.scope) {
-                class_name = func->common.scope->name;
-                call_type = "::";
-            } else {
-                class_name = NULL;
-                call_type = NULL;
-            }
-        } else {
-            switch (prev_execute_data->opline->extended_value) {
-                case ZEND_EVAL:
-                    function_name = "eval";
-                    break;
-                case ZEND_INCLUDE:
-                    function_name = "include";
-                    break;
-                case ZEND_REQUIRE:
-                    function_name = "require";
-                    break;
-                case ZEND_INCLUDE_ONCE:
-                    function_name = "include_once";
-                    break;
-                case ZEND_REQUIRE_ONCE:
-                    function_name = "require_once";
-                    break;
-                default:
-                    function_name = "unknown";
-            }
-
-            call_type = NULL;
-        }
-    } else {
-        class_name = NULL;
-        call_type = NULL;
-        function_name = "main";
+    func_t *si = (func_t *) emalloc(sizeof(func_t));
+    if (NULL == si) {
+        return;
     }
 
-    if (class_name) {
-        ZEND_PUTS(ZSTR_VAL(class_name));
-        ZEND_PUTS(call_type);
-
-        if (object && !func->common.scope && object->handlers->get_class_name != std_object_handlers.get_class_name) {
-            zend_string_release(class_name);
-        }
+    build_function_name(&si, execute_data TSRMLS_CC);
+    if (NULL != si->class_name) {
+        zend_printf("%s%s", si->class_name, si->call_type);
     }
 
-    zend_printf("%s(", function_name);
+    zend_printf("%s\n", si->function);
+
+    efree(si);
 }
 
 PHP_MINIT_FUNCTION(omni)

@@ -8,7 +8,7 @@ function normal()
 
     echo PHP_EOL, PHP_EOL;
     echo '---- debug_print_backtrace() ----', PHP_EOL;
-    debug_print_backtrace();
+    debug_print_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS);
 
     echo PHP_EOL, PHP_EOL;
     echo '---- Exception ----', PHP_EOL;
@@ -16,11 +16,21 @@ function normal()
     echo PHP_EOL, PHP_EOL;
 }
 
-class Qux
+trait CustomTrait
 {
-    public function __invoke()
+    public function traitMethod()
     {
         normal();
+    }
+}
+
+class Qux
+{
+    use CustomTrait;
+
+    public function __invoke()
+    {
+        $this->traitMethod();
     }
 }
 
