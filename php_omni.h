@@ -29,27 +29,27 @@ typedef struct _func_t {
     uint8_t type;
 } func_t;
 
-typedef struct _call_t {
-    func_t  func;
-    char   *filename;
-    int     lineno;
-} call_t;
+// typedef struct _call_t {
+//     func_t  func;
+//     char   *filename;
+//     int     lineno;
+// } call_t;
 
-#define FUNC_UNKNOWN        0x00
-#define FUNC_NORMAL         0x01
-#define FUNC_STATIC_MEMBER  0x02
-#define FUNC_MEMBER         0x03
+#define UNKNOWN_FUNCTION_TYPE        0b00000
+#define NORMAL_FUNCTION_TYPE         0b00001
+#define STATIC_MEMBER_FUNCTION_TYPE  0b00010
+#define MEMBER_FUNCTION_TYPE         0b00011
 
-#define FUNC_INCLUDES       0x10
+#define INCLUDES_FUNCTION_TYPE       0b10000
 
-#define FUNC_EVAL           0x10
-#define FUNC_INCLUDE        0x11
-#define FUNC_INCLUDE_ONCE   0x12
-#define FUNC_REQUIRE        0x13
-#define FUNC_REQUIRE_ONCE   0x14
-#define FUNC_MAIN           0x15
+#define EVAL_FUNCTION_TYPE           0b10000
+#define INCLUDE_FUNCTION_TYPE        0b10001
+#define INCLUDE_ONCE_FUNCTION_TYPE   0b10010
+#define REQUIRE_FUNCTION_TYPE        0b10011
+#define REQUIRE_ONCE_FUNCTION_TYPE   0b10100
+#define MAIN_FUNCTION_TYPE           0b10101
 
-#define FUNC_ZEND_PASS      0x20
+#define ZEND_PASS_FUNCTION_TYPE      0b100000
 
 // ZEND_BEGIN_MODULE_GLOBALS(omni)
 //  zend_long global_value;
