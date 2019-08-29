@@ -46,6 +46,7 @@ void build_function_name(func_t *si, zend_execute_data *edata)
 
 #if PHP_VERSION_ID >= 70100
     if (edata && edata->func && edata->func == (zend_function *) &zend_pass_function) {
+        si->type = 1; // ZEND_PASS_FUNCTION_TYPE
         si->function = "{zend_pass}";
 
         return;
@@ -56,21 +57,24 @@ void build_function_name(func_t *si, zend_execute_data *edata)
         return;
     }
 
+    si->type = 2; // NORMAL_FUNCTION_TYPE
+
 #if PHP_VERSION_ID >= 70100
     if ((Z_TYPE(edata->This)) == IS_OBJECT) {
 #else
     if (edata->This.value.obj) {
 #endif
+
+        si->type = 3; // MEMBER_FUNCTION_TYPE
         if (edata->func->common.scope) {
             si->class_name = edata->func->common.scope->name->val;
         } else {
             si->class_name = edata->This.value.obj->ce->name->val;
         }
 
-        si->call_type = "->";
     } else if (edata->func->common.scope) {
+        si->type = 4; // STATIC_MEMBER_FUNCTION_TYPE
         si->class_name = edata->func->common.scope->name->val;
-        si->call_type = "::";
     }
 
     if (edata->func->common.function_name) {
@@ -90,27 +94,37 @@ void build_function_name(func_t *si, zend_execute_data *edata)
     ) {
         switch (edata->prev_execute_data->opline->extended_value) {
             case ZEND_EVAL:
+                si->type = 5; // EVAL_FUNCTION_TYPE
                 si->function = "{eval}";
                 break;
             case ZEND_INCLUDE:
+                si->type = 6; // INCLUDE_FUNCTION_TYPE
                 si->function = "{include}";
                 break;
             case ZEND_REQUIRE:
+                si->type = 7; // REQUIRE_FUNCTION_TYPE
                 si->function = "{require}";
                 break;
             case ZEND_INCLUDE_ONCE:
+                si->type = 8; // INCLUDE_ONCE_FUNCTION_TYPE
                 si->function = "{include_once}";
                 break;
             case ZEND_REQUIRE_ONCE:
+                si->type = 9; // REQUIRE_ONCE_FUNCTION_TYPE
                 si->function = "{require_once}";
                 break;
             default:
+                si->type = 10; // UNKNOWN_FUNCTION_TYPE
                 si->function = "{unknown}";
         }
     } else if (edata->prev_execute_data) {
-        build_function_name(si, edata);
+        build_function_name(si, edata->prev_execute_data);
+    } else {
+        si->type = 10; // UNKNOWN_FUNCTION_TYPE
     }
 }
+
+static int indent = 0;
 
 void my_execute_ex(zend_execute_data *execute_data TSRMLS_DC)
 {
@@ -129,12 +143,14 @@ void my_execute_ex(zend_execute_data *execute_data TSRMLS_DC)
         return;
     }
 
-    build_function_name(&si, execute_data TSRMLS_CC);
+    build_function_name(si, execute_data TSRMLS_CC);
+    zend_printf("#%-2d ", indent++);
+
     if (NULL != si->class_name) {
-        zend_printf("%s%s", si->class_name, si->call_type);
+        zend_printf("%s%s", si->class_name, si->type == 3 ? "->" : "::");
     }
 
-    zend_printf("%s\n", si->function);
+    zend_printf("%s\n", NULL != si->function ? si->function : "{main}");
 
     efree(si);
 }

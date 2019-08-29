@@ -24,9 +24,9 @@ extern zend_module_entry omni_module_entry;
 #endif
 
 typedef struct _func_t {
-    char *class_name;
-    char *function;
-    char *call_type;
+    char   *class_name;
+    char   *function;
+    uint8_t type;
 } func_t;
 
 typedef struct _call_t {
