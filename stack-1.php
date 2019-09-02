@@ -10,7 +10,7 @@ $anonClass = new class() {
     }
 };
 
-$__lambda_func = create_function('', <<<'FN'
+$runtimeCreatedFunction = create_function('', <<<'FN'
 $dummy = 'foo';
 global $anonClass;
 $anonClass->anonMethod();
@@ -20,13 +20,18 @@ FN);
 function assert_callback($file, $line, $code)
 {
     $dummy = 3;
-    global $__lambda_func;
-    $__lambda_func();
+    global $runtimeCreatedFunction;
+    $runtimeCreatedFunction();
 }
 
-assert_options(ASSERT_ACTIVE,     1);
-assert_options(ASSERT_WARNING,    0);
-assert_options(ASSERT_QUIET_EVAL, 1);
-assert_options(ASSERT_CALLBACK,   'assert_callback');
+function init()
+{
+    assert_options(ASSERT_ACTIVE,     1);
+    assert_options(ASSERT_WARNING,    0);
+    assert_options(ASSERT_QUIET_EVAL, 1);
+    assert_options(ASSERT_CALLBACK,   'assert_callback');
 
-assert(false, 'is false!!!');
+    assert(false, 'is false!!!');
+}
+
+init();

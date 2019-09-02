@@ -6,14 +6,20 @@ function normal()
 {
     $do = 'nothing';
 
-    echo PHP_EOL, PHP_EOL;
-    echo '---- debug_print_backtrace() ----', PHP_EOL;
-    debug_print_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS);
+    throw new \Exception('foo');
 
-    echo PHP_EOL, PHP_EOL;
-    echo '---- Exception ----', PHP_EOL;
-    echo (new \Exception())->getTraceAsString(), PHP_EOL;
-    echo PHP_EOL, PHP_EOL;
+    // echo PHP_EOL, PHP_EOL;
+    // echo '---- debug_print_backtrace() ----', PHP_EOL;
+    // debug_print_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS);
+    // echo PHP_EOL, PHP_EOL;
+
+    // echo PHP_EOL, PHP_EOL;
+    // echo '---- Exception ----', PHP_EOL;
+    // echo (new \Exception())->getTraceAsString(), PHP_EOL;
+
+    // echo '---- xdebug ----';
+    // echo xdebug_get_formatted_function_stack();
+    // echo PHP_EOL;
 }
 
 trait CustomTrait
